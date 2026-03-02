@@ -138,18 +138,18 @@ function makeCombined(
   const lo = Math.min(minV, maxV), hi = Math.max(minV, maxV);
   return (tRaw: number): number => {
     const t = clamp01(tRaw);
-    const a = clamp01(aFn(t)), b = clamp01(bFn(t));
+    const a = aFn(t), b = bFn(t);
     switch (mode) {
-      case "yoyo": { const p = t < 0.5 ? t * 2 : (1 - t) * 2; return clamp01(aFn(p)); }
-      case "composite": return clamp01(aFn(b));
-      case "multiply": return clamp01(a * b);
-      case "connect": return t < 0.5 ? 0.5 * clamp01(aFn(t * 2)) : 0.5 + 0.5 * clamp01(bFn((t - 0.5) * 2));
-      case "average": return clamp01((a + b) * 0.5);
-      case "lerp": return clamp01(lerp(a, b, m));
+      case "yoyo": { const p = t < 0.5 ? t * 2 : (1 - t) * 2; return aFn(p); }
+      case "composite": return aFn(clamp01(b));
+      case "multiply": return a * b;
+      case "connect": return t < 0.5 ? 0.5 * aFn(t * 2) : 0.5 + 0.5 * bFn((t - 0.5) * 2);
+      case "average": return (a + b) * 0.5;
+      case "lerp": return lerp(a, b, m);
       case "clamp": return Math.max(lo, Math.min(hi, a));
-      case "repeat": return clamp01(aFn((t * count) % 1));
-      case "zigzag": { const cyc = t * count; const whole = Math.floor(cyc); const frac = cyc - whole; return clamp01(aFn(whole % 2 === 0 ? frac : 1 - frac)); }
-      case "crossfade": return clamp01(lerp(a, b, t));
+      case "repeat": return aFn((t * count) % 1);
+      case "zigzag": { const cyc = t * count; const whole = Math.floor(cyc); const frac = cyc - whole; return aFn(whole % 2 === 0 ? frac : 1 - frac); }
+      case "crossfade": return lerp(a, b, t);
       default: return a;
     }
   };
@@ -214,40 +214,56 @@ function EasingCurve({ fn, color, width = W, height = H, duration, animated = fa
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const pad = width < 200 ? 12 : PAD;
+    const pad = width < 260 ? 12 : PAD;
     const iw = width - pad * 2, ih = height - pad * 2;
     ctx.clearRect(0, 0, width, height);
+
+    // Pre-sample to find actual value range
+    const samples: number[] = [];
+    for (let i = 0; i <= 200; i++) {
+      const p = i / 200;
+      let v: number; try { v = fn(p); } catch { v = p; }
+      samples.push(v);
+    }
+    const sMin = Math.min(...samples), sMax = Math.max(...samples);
+    const vLo = Math.min(0, sMin), vHi = Math.max(1, sMax);
+    // Only add margin for the overshoot portion; normal curves (no overshoot) stay exact
+    const below = Math.max(0, -vLo), above = Math.max(0, vHi - 1);
+    const vMin = vLo - below * 0.15, vMax = vHi + above * 0.15;
+    const vRange = vMax - vMin;
+    const toY = (v: number) => pad + ih - (v - vMin) / vRange * ih;
+
     // grid
     ctx.strokeStyle = th.canvasGrid; ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
       ctx.beginPath(); ctx.moveTo(pad + iw * i / 4, pad); ctx.lineTo(pad + iw * i / 4, pad + ih); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(pad, pad + ih * i / 4); ctx.lineTo(pad + iw, pad + ih * i / 4); ctx.stroke();
     }
+    // left axis + v=0 baseline
     ctx.strokeStyle = th.canvasAxis; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, pad + ih); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(pad, pad + ih); ctx.lineTo(pad + iw, pad + ih); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad, toY(0)); ctx.lineTo(pad + iw, toY(0)); ctx.stroke();
+    // v=1 reference + linear diagonal (dashed)
     ctx.strokeStyle = th.canvasAxis; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(pad, pad + ih); ctx.lineTo(pad + iw, pad); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad, toY(1)); ctx.lineTo(pad + iw, toY(1)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad, toY(0)); ctx.lineTo(pad + iw, toY(1)); ctx.stroke();
     ctx.setLineDash([]);
     // curve with glow
     ctx.strokeStyle = color; ctx.lineWidth = width < 200 ? 2 : 3;
     ctx.shadowColor = color; ctx.shadowBlur = width < 200 ? 4 : 8;
     ctx.beginPath();
     for (let i = 0; i <= 200; i++) {
-      const p = i / 200;
-      let v: number; try { v = fn(p); } catch { v = p; }
-      const x = pad + p * iw, y = pad + ih - clamp01(v) * ih;
+      const x = pad + (i / 200) * iw, y = toY(samples[i]);
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.stroke(); ctx.shadowBlur = 0;
     // animated dot with crosshairs
     if (progress != null) {
       let v: number; try { v = fn(progress); } catch { v = progress; }
-      v = clamp01(v);
-      const x = pad + progress * iw, y = pad + ih - v * ih;
+      const x = pad + progress * iw, y = toY(v);
       ctx.strokeStyle = th.canvasAxis; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(x, y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x, pad + ih); ctx.lineTo(x, y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, toY(0)); ctx.lineTo(x, y); ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 12;
       ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
@@ -262,7 +278,7 @@ function EasingCurve({ fn, color, width = W, height = H, duration, animated = fa
       ctx.textAlign = "center";
       ctx.fillText("0", pad, pad + ih + 16); ctx.fillText("1", pad + iw, pad + ih + 16);
       ctx.textAlign = "right";
-      ctx.fillText("0", pad - 8, pad + ih + 4); ctx.fillText("1", pad - 8, pad + 4);
+      ctx.fillText("0", pad - 8, toY(0) + 4); ctx.fillText("1", pad - 8, toY(1) + 4);
     }
   }
 
@@ -347,7 +363,7 @@ function TemplatePreview({ fn, color, template, duration, th, customImg }: {
 }) {
   const [t, setT] = useState(0);
   useAnimLoop(duration, setT);
-  let v = 0; try { v = clamp01(fn(t)); } catch { }
+  let v = 0; try { v = fn(t); } catch { }
 
   const CardFace = ({ style }: { style?: React.CSSProperties }) => (
     customImg ? (
@@ -438,12 +454,12 @@ function TemplatePreview({ fn, color, template, duration, th, customImg }: {
 function TrailPreview({ fn, color, duration, th }: { fn: (t: number) => number; color: string; duration: number; th: Theme }) {
   const [t, setT] = useState(0);
   useAnimLoop(duration, setT);
-  let v = 0; try { v = clamp01(fn(t)); } catch { }
+  let v = 0; try { v = fn(t); } catch { }
   const trackW = 156;
   const x = 4 + v * (trackW - 16);
   const ghosts = [0.95, 0.9, 0.82, 0.72, 0.6].map(offset => {
     const gt = Math.max(0, t - (1 - offset) * 0.15);
-    let gv = 0; try { gv = clamp01(fn(gt)); } catch { }
+    let gv = 0; try { gv = fn(gt); } catch { }
     return 4 + gv * (trackW - 16);
   });
   return (
