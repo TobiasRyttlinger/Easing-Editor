@@ -170,6 +170,35 @@ function evalNode(node: TweenNode, customFn: (t: number) => number): (t: number)
   return makeCombined(node.mode, aFn, bFn, node.mix, node.repeatCount, node.clampMin, node.clampMax);
 }
 
+// ── Drag-and-drop path utilities ──────────────────────────────────────────────
+
+function getNodeAtPath(root: TweenNode, path: string[]): TweenNode {
+  if (path.length === 0) return root;
+  if (root.type !== "op") return root;
+  const [h, ...rest] = path;
+  return getNodeAtPath(h === "a" ? root.a : root.b, rest);
+}
+
+function setNodeAtPath(root: TweenNode, path: string[], value: TweenNode): TweenNode {
+  if (path.length === 0) return value;
+  if (root.type !== "op") return root;
+  const [h, ...rest] = path;
+  return h === "a"
+    ? { ...root, a: setNodeAtPath(root.a, rest, value) }
+    : { ...root, b: setNodeAtPath(root.b, rest, value) };
+}
+
+// Returns true if anc is a prefix of (or equal to) desc
+function isAncestorOrSame(anc: string[], desc: string[]): boolean {
+  return anc.length <= desc.length && anc.every((v, i) => desc[i] === v);
+}
+
+type DragCtx = {
+  dragging: string[] | null;
+  setDragging: (p: string[] | null) => void;
+  swap: (a: string[], b: string[]) => void;
+};
+
 const categories: Record<string, string[]> = {
   "Sine": ["easeInSine", "easeOutSine", "easeInOutSine"],
   "Quad": ["easeInQuad", "easeOutQuad", "easeInOutQuad"],
@@ -495,22 +524,58 @@ function TrailPreview({ fn, color, duration, th }: { fn: (t: number) => number; 
 
 const SINGLE_ARG_MODES: CombineMode[] = ["yoyo", "clamp", "repeat", "zigzag"];
 
-function NodeEditor({ node, onChange, th, allNames, selectStyle }: {
+function NodeEditor({ node, onChange, th, allNames, selectStyle, path, dragCtx }: {
   node: TweenNode;
   onChange: (n: TweenNode) => void;
   th: Theme;
   allNames: string[];
   selectStyle: React.CSSProperties;
+  path: string[];
+  dragCtx: DragCtx;
 }) {
+  const [over, setOver] = useState(false);
+
+  const isSource = !!dragCtx.dragging && dragCtx.dragging.join(",") === path.join(",");
+  const canDrop = !!dragCtx.dragging && !isSource
+    && !isAncestorOrSame(dragCtx.dragging, path)
+    && !isAncestorOrSame(path, dragCtx.dragging);
+
+  const dropProps = canDrop ? {
+    onDragEnter: (e: React.DragEvent) => { e.preventDefault(); setOver(true); },
+    onDragLeave: (e: React.DragEvent) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); },
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); },
+    onDrop: (e: React.DragEvent) => { e.stopPropagation(); dragCtx.swap(dragCtx.dragging!, path); dragCtx.setDragging(null); setOver(false); },
+  } : {};
+
   const btnStyle: React.CSSProperties = {
     background: "transparent", border: `1px solid ${th.border}`, borderRadius: 4,
     padding: "2px 8px", cursor: "pointer", fontSize: 14, color: th.textSub, lineHeight: 1,
     flexShrink: 0,
   };
 
+  // Drag handle — only for non-root nodes
+  const handle = path.length > 0 ? (
+    <span
+      draggable
+      onDragStart={e => { e.stopPropagation(); dragCtx.setDragging(path); }}
+      onDragEnd={() => { dragCtx.setDragging(null); setOver(false); }}
+      title="Drag to swap"
+      style={{ cursor: "grab", color: th.textMuted, userSelect: "none", fontSize: 13, lineHeight: 1, opacity: 0.5, flexShrink: 0 }}
+    >⠿</span>
+  ) : null;
+
+  const rowStyle: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+    borderRadius: 6, padding: "2px 0",
+    outline: over ? `2px solid #f59e0b` : "none",
+    opacity: isSource ? 0.35 : 1,
+    transition: "outline 0.1s, opacity 0.1s",
+  };
+
   if (node.type === "simple") {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <div {...dropProps} style={rowStyle}>
+        {handle}
         <select value={node.name} onChange={e => onChange({ type: "simple", name: e.target.value })} style={selectStyle}>
           {allNames.map(n => <option key={n}>{n}</option>)}
         </select>
@@ -525,8 +590,9 @@ function NodeEditor({ node, onChange, th, allNames, selectStyle }: {
   const showB = !SINGLE_ARG_MODES.includes(node.mode);
 
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+    <div style={{ opacity: isSource ? 0.35 : 1, transition: "opacity 0.1s" }}>
+      <div {...dropProps} style={{ ...rowStyle, marginBottom: 6, opacity: 1 }}>
+        {handle}
         <select value={node.mode}
           onChange={e => onChange({ ...node, mode: e.target.value as CombineMode })}
           style={{ ...selectStyle, color: "#f59e0b" }}>
@@ -564,12 +630,12 @@ function NodeEditor({ node, onChange, th, allNames, selectStyle }: {
       <div style={{ borderLeft: `2px solid ${th.border}`, paddingLeft: 10, display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
           <span style={{ fontSize: 10, color: th.textMuted, minWidth: 12, paddingTop: 9 }}>A</span>
-          <NodeEditor node={node.a} onChange={a => onChange({ ...node, a })} th={th} allNames={allNames} selectStyle={selectStyle} />
+          <NodeEditor node={node.a} onChange={a => onChange({ ...node, a })} th={th} allNames={allNames} selectStyle={selectStyle} path={[...path, "a"]} dragCtx={dragCtx} />
         </div>
         {showB && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
             <span style={{ fontSize: 10, color: th.textMuted, minWidth: 12, paddingTop: 9 }}>B</span>
-            <NodeEditor node={node.b} onChange={b => onChange({ ...node, b })} th={th} allNames={allNames} selectStyle={selectStyle} />
+            <NodeEditor node={node.b} onChange={b => onChange({ ...node, b })} th={th} allNames={allNames} selectStyle={selectStyle} path={[...path, "b"]} dragCtx={dragCtx} />
           </div>
         )}
       </div>
@@ -597,6 +663,16 @@ export default function App() {
   const [cp, setCp] = useState([0.25, 0.1, 0.25, 1.0]);
   const [tab, setTab] = useState<"library" | "bezier">("library");
   const [duration, setDuration] = useState(1.8);
+  const [draggingPath, setDraggingPath] = useState<string[] | null>(null);
+  const dragCtx: DragCtx = {
+    dragging: draggingPath,
+    setDragging: setDraggingPath,
+    swap: (pathA, pathB) => setRootNode(root => {
+      const a = getNodeAtPath(root, pathA);
+      const b = getNodeAtPath(root, pathB);
+      return setNodeAtPath(setNodeAtPath(root, pathA, b), pathB, a);
+    }),
+  };
 
   const customFn = useMemo(() => cubicBezier(cp[0], cp[1], cp[2], cp[3]), [cp]);
   const finalFn = useMemo(() => evalNode(rootNode, customFn), [rootNode, customFn]);
@@ -681,7 +757,7 @@ export default function App() {
         {/* Tween Tree panel */}
         <div style={{ ...panel(), padding: "10px 12px", marginBottom: 10 }}>
           <div style={{ fontSize: 11, color: th.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tween Tree</div>
-          <NodeEditor node={rootNode} onChange={setRootNode} th={th} allNames={allNames} selectStyle={selectStyle} />
+          <NodeEditor node={rootNode} onChange={setRootNode} th={th} allNames={allNames} selectStyle={selectStyle} path={[]} dragCtx={dragCtx} />
         </div>
 
         {/* Library Tab */}
