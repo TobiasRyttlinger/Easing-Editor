@@ -155,6 +155,21 @@ function makeCombined(
   };
 }
 
+// ── Tween node tree ───────────────────────────────────────────────────────────
+
+type TweenNode =
+  | { type: "simple"; name: string }
+  | { type: "op"; mode: CombineMode; a: TweenNode; b: TweenNode;
+      mix: number; repeatCount: number; clampMin: number; clampMax: number };
+
+function evalNode(node: TweenNode, customFn: (t: number) => number): (t: number) => number {
+  if (node.type === "simple")
+    return node.name === "customCubicBezier" ? customFn : (easings[node.name] ?? easings.linear);
+  const aFn = evalNode(node.a, customFn);
+  const bFn = evalNode(node.b, customFn);
+  return makeCombined(node.mode, aFn, bFn, node.mix, node.repeatCount, node.clampMin, node.clampMax);
+}
+
 const categories: Record<string, string[]> = {
   "Sine": ["easeInSine", "easeOutSine", "easeInOutSine"],
   "Quad": ["easeInQuad", "easeOutQuad", "easeInOutQuad"],
@@ -476,6 +491,92 @@ function TrailPreview({ fn, color, duration, th }: { fn: (t: number) => number; 
   );
 }
 
+// ── Node Editor ───────────────────────────────────────────────────────────────
+
+const SINGLE_ARG_MODES: CombineMode[] = ["yoyo", "clamp", "repeat", "zigzag"];
+
+function NodeEditor({ node, onChange, th, allNames, selectStyle }: {
+  node: TweenNode;
+  onChange: (n: TweenNode) => void;
+  th: Theme;
+  allNames: string[];
+  selectStyle: React.CSSProperties;
+}) {
+  const btnStyle: React.CSSProperties = {
+    background: "transparent", border: `1px solid ${th.border}`, borderRadius: 4,
+    padding: "2px 8px", cursor: "pointer", fontSize: 14, color: th.textSub, lineHeight: 1,
+    flexShrink: 0,
+  };
+
+  if (node.type === "simple") {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <select value={node.name} onChange={e => onChange({ type: "simple", name: e.target.value })} style={selectStyle}>
+          {allNames.map(n => <option key={n}>{n}</option>)}
+        </select>
+        <button title="Wrap in operation" style={btnStyle}
+          onClick={() => onChange({ type: "op", mode: "composite", a: node, b: { type: "simple", name: "linear" }, mix: 0.5, repeatCount: 3, clampMin: 0.15, clampMax: 0.85 })}>
+          +
+        </button>
+      </div>
+    );
+  }
+
+  const showB = !SINGLE_ARG_MODES.includes(node.mode);
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+        <select value={node.mode}
+          onChange={e => onChange({ ...node, mode: e.target.value as CombineMode })}
+          style={{ ...selectStyle, color: "#f59e0b" }}>
+          {combineModes.filter(m => m.id !== "none").map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+        {(node.mode === "lerp" || node.mode === "average") && (
+          <>
+            <span style={{ fontSize: 11, color: th.textMuted }}>Mix: {node.mix.toFixed(2)}</span>
+            <input type="range" min={0} max={1} step={0.01} value={node.mix}
+              onChange={e => onChange({ ...node, mix: parseFloat(e.target.value) })}
+              style={{ width: 80, accentColor: "#f59e0b" }} />
+          </>
+        )}
+        {(node.mode === "repeat" || node.mode === "zigzag") && (
+          <>
+            <span style={{ fontSize: 11, color: th.textMuted }}>×{node.repeatCount}</span>
+            <input type="range" min={1} max={12} step={1} value={node.repeatCount}
+              onChange={e => onChange({ ...node, repeatCount: parseInt(e.target.value) })}
+              style={{ width: 60, accentColor: "#f59e0b" }} />
+          </>
+        )}
+        {node.mode === "clamp" && (
+          <>
+            <span style={{ fontSize: 11, color: th.textMuted }}>[{node.clampMin.toFixed(2)}, {node.clampMax.toFixed(2)}]</span>
+            <input type="range" min={0} max={1} step={0.01} value={node.clampMin}
+              onChange={e => onChange({ ...node, clampMin: parseFloat(e.target.value) })}
+              style={{ width: 60, accentColor: "#f59e0b" }} />
+            <input type="range" min={0} max={1} step={0.01} value={node.clampMax}
+              onChange={e => onChange({ ...node, clampMax: parseFloat(e.target.value) })}
+              style={{ width: 60, accentColor: "#f59e0b" }} />
+          </>
+        )}
+        <button title="Collapse (keep A)" style={btnStyle} onClick={() => onChange(node.a)}>−</button>
+      </div>
+      <div style={{ borderLeft: `2px solid ${th.border}`, paddingLeft: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+          <span style={{ fontSize: 10, color: th.textMuted, minWidth: 12, paddingTop: 9 }}>A</span>
+          <NodeEditor node={node.a} onChange={a => onChange({ ...node, a })} th={th} allNames={allNames} selectStyle={selectStyle} />
+        </div>
+        {showB && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+            <span style={{ fontSize: 10, color: th.textMuted, minWidth: 12, paddingTop: 9 }}>B</span>
+            <NodeEditor node={node.b} onChange={b => onChange({ ...node, b })} th={th} allNames={allNames} selectStyle={selectStyle} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -492,24 +593,15 @@ export default function App() {
     e.target.value = "";
   };
 
-  const [selected, setSelected] = useState("easeInOutCubic");
+  const [rootNode, setRootNode] = useState<TweenNode>({ type: "simple", name: "easeInOutCubic" });
   const [cp, setCp] = useState([0.25, 0.1, 0.25, 1.0]);
   const [tab, setTab] = useState<"library" | "bezier">("library");
-
-  const [mode, setMode] = useState<CombineMode>("none");
-  const [secondary, setSecondary] = useState("easeOutBounce");
-  const [mix, setMix] = useState(0.5);
-  const [repeatCount, setRepeatCount] = useState(3);
-  const [clampMin, setClampMin] = useState(0.15);
-  const [clampMax, setClampMax] = useState(0.85);
   const [duration, setDuration] = useState(1.8);
 
   const customFn = useMemo(() => cubicBezier(cp[0], cp[1], cp[2], cp[3]), [cp]);
-  const getFn = (name: string) => name === "customCubicBezier" ? customFn : (easings[name] || easings.linear);
-  const activeFn = getFn(selected);
-  const fnB = getFn(secondary);
-  const finalFn = useMemo(() => makeCombined(mode, activeFn, fnB, mix, repeatCount, clampMin, clampMax), [mode, activeFn, fnB, mix, repeatCount, clampMin, clampMax]);
-  const activeColor = mode !== "none" ? "#f59e0b" : getColor(selected);
+  const finalFn = useMemo(() => evalNode(rootNode, customFn), [rootNode, customFn]);
+  const selectedName = rootNode.type === "simple" ? rootNode.name : null;
+  const activeColor = rootNode.type === "op" ? "#f59e0b" : getColor(selectedName ?? "linear");
 
   const allNames = [...Object.values(categories).flat(), "linear", "customCubicBezier"];
 
@@ -586,49 +678,10 @@ export default function App() {
           ))}
         </div>
 
-        {/* Combine panel */}
+        {/* Tween Tree panel */}
         <div style={{ ...panel(), padding: "10px 12px", marginBottom: 10 }}>
-          <div style={{ fontSize: 11, color: th.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Combine</div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ fontSize: 11, color: th.textMuted }}>Mode</span>
-              <select value={mode} onChange={e => setMode(e.target.value as CombineMode)} style={selectStyle}>
-                {combineModes.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-              </select>
-            </div>
-            {mode !== "none" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: 11, color: th.textMuted }}>Secondary</span>
-                <select value={secondary} onChange={e => setSecondary(e.target.value)} style={selectStyle}>
-                  {allNames.map(n => <option key={n}>{n}</option>)}
-                </select>
-              </div>
-            )}
-            {(mode === "lerp" || mode === "average") && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 160 }}>
-                <span style={{ fontSize: 11, color: th.textMuted }}>Mix: {mix.toFixed(2)}</span>
-                <input type="range" min={0} max={1} step={0.01} value={mix} onChange={e => setMix(parseFloat(e.target.value))} style={{ accentColor: "#f59e0b" }} />
-              </div>
-            )}
-            {(mode === "repeat" || mode === "zigzag") && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 160 }}>
-                <span style={{ fontSize: 11, color: th.textMuted }}>Count: {repeatCount}</span>
-                <input type="range" min={1} max={12} step={1} value={repeatCount} onChange={e => setRepeatCount(parseInt(e.target.value, 10))} style={{ accentColor: "#f59e0b" }} />
-              </div>
-            )}
-            {mode === "clamp" && (
-              <>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 140 }}>
-                  <span style={{ fontSize: 11, color: th.textMuted }}>Min: {clampMin.toFixed(2)}</span>
-                  <input type="range" min={0} max={1} step={0.01} value={clampMin} onChange={e => setClampMin(parseFloat(e.target.value))} style={{ accentColor: "#f59e0b" }} />
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 140 }}>
-                  <span style={{ fontSize: 11, color: th.textMuted }}>Max: {clampMax.toFixed(2)}</span>
-                  <input type="range" min={0} max={1} step={0.01} value={clampMax} onChange={e => setClampMax(parseFloat(e.target.value))} style={{ accentColor: "#f59e0b" }} />
-                </div>
-              </>
-            )}
-          </div>
+          <div style={{ fontSize: 11, color: th.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Tween Tree</div>
+          <NodeEditor node={rootNode} onChange={setRootNode} th={th} allNames={allNames} selectStyle={selectStyle} />
         </div>
 
         {/* Library Tab */}
@@ -644,9 +697,9 @@ export default function App() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                       {names.map(n => {
                         const col = getColor(n);
-                        const isActive = selected === n;
+                        const isActive = selectedName === n;
                         return (
-                          <button key={n} onClick={() => setSelected(n)} style={{
+                          <button key={n} onClick={() => setRootNode({ type: "simple", name: n })} style={{
                             padding: "4px 8px", borderRadius: 5,
                             border: `1px solid ${isActive ? col : "transparent"}`,
                             background: isActive ? col + "22" : "transparent",
@@ -659,11 +712,11 @@ export default function App() {
                   </div>
                 ))}
                 <div style={{ borderTop: `1px solid ${th.border}`, marginTop: 8, paddingTop: 8 }}>
-                  <button onClick={() => setSelected("linear")} style={{
+                  <button onClick={() => setRootNode({ type: "simple", name: "linear" })} style={{
                     padding: "4px 8px", borderRadius: 5,
-                    border: `1px solid ${selected === "linear" ? "#6b7280" : "transparent"}`,
-                    background: selected === "linear" ? "#6b728022" : "transparent",
-                    color: selected === "linear" ? "#6b7280" : th.textSub,
+                    border: `1px solid ${selectedName === "linear" ? "#6b7280" : "transparent"}`,
+                    background: selectedName === "linear" ? "#6b728022" : "transparent",
+                    color: selectedName === "linear" ? "#6b7280" : th.textSub,
                     cursor: "pointer", fontSize: 11, fontFamily: "monospace", width: "100%", textAlign: "left",
                   }}>linear</button>
                 </div>
@@ -680,7 +733,7 @@ export default function App() {
                 <div style={{ flex: 1, minWidth: 260 }}>
                   <div style={{ fontSize: 11, color: th.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
                     Template Previews
-                    <span style={{ marginLeft: 8, color: activeColor, fontFamily: "monospace", textTransform: "none", fontSize: 11 }}>{selected}</span>
+                    <span style={{ marginLeft: 8, color: activeColor, fontFamily: "monospace", textTransform: "none", fontSize: 11 }}>{selectedName ?? "complex"}</span>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     {templates.map(({ id }) => (
@@ -696,11 +749,11 @@ export default function App() {
                 <div style={{ fontSize: 11, color: th.textMuted, fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>All Curves</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: 6 }}>
                   {[...Object.values(categories).flat(), "linear"].map(n => (
-                    <div key={n} onClick={() => setSelected(n)} style={{
+                    <div key={n} onClick={() => setRootNode({ type: "simple", name: n })} style={{
                       cursor: "pointer", borderRadius: 6,
-                      border: `1px solid ${selected === n ? getColor(n) : th.border}`,
+                      border: `1px solid ${selectedName === n ? getColor(n) : th.border}`,
                       overflow: "hidden",
-                      background: selected === n ? getColor(n) + "11" : th.bg,
+                      background: selectedName === n ? getColor(n) + "11" : th.bg,
                       transition: "border-color 0.15s",
                     }}>
                       <EasingCurve fn={easings[n] ?? (t => t)} color={getColor(n)} width={72} height={72} th={th} />
@@ -718,7 +771,7 @@ export default function App() {
             <div>
               <div style={{ ...panel(), padding: 12 }}>
                 <div style={{ fontSize: 11, color: th.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Drag control points</div>
-                <BezierEditor cp={cp} onChange={v => { setCp(v); setSelected("customCubicBezier"); }} th={th} />
+                <BezierEditor cp={cp} onChange={v => { setCp(v); setRootNode({ type: "simple", name: "customCubicBezier" }); }} th={th} />
               </div>
             </div>
             <div style={{ flex: 1, minWidth: 260 }}>
@@ -731,7 +784,7 @@ export default function App() {
                       <span style={{ color: "#34d399", fontFamily: "monospace" }}>{cp[i].toFixed(3)}</span>
                     </div>
                     <input type="range" min={i % 2 === 0 ? 0 : -2} max={i % 2 === 0 ? 1 : 3} step={0.001} value={cp[i]}
-                      onChange={e => { const n = [...cp]; n[i] = parseFloat(e.target.value); setCp(n); setSelected("customCubicBezier"); }}
+                      onChange={e => { const n = [...cp]; n[i] = parseFloat(e.target.value); setCp(n); setRootNode({ type: "simple", name: "customCubicBezier" }); }}
                       style={{ width: "100%", accentColor: "#34d399" }} />
                   </div>
                 ))}
