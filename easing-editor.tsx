@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const W = 320, H = 320, PAD = 40, IW = W - PAD * 2;
 
@@ -207,7 +207,7 @@ function EasingCurve({ fn, color, width = W, height = H, duration, animated = fa
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useAnimLoop(duration ?? 1.8, t => { if (animated) draw(t); });
+  useAnimLoop(duration ?? 1.0, t => { if (animated) draw(t); });
 
   function draw(progress: number | null) {
     const canvas = canvasRef.current;
@@ -347,7 +347,7 @@ function TemplatePreview({ fn, color, template, duration, th }: {
 }) {
   const [t, setT] = useState(0);
   useAnimLoop(duration, setT);
-  let v = 0; try { v = clamp01(fn(t)); } catch {}
+  let v = 0; try { v = clamp01(fn(t)); } catch { }
 
   const CardFace = ({ style }: { style?: React.CSSProperties }) => (
     <div style={{
@@ -363,7 +363,7 @@ function TemplatePreview({ fn, color, template, duration, th }: {
     </div>
   );
 
-  const trackW = 240;
+  const trackW = 156;
   let inner: React.ReactNode = null;
 
   if (template === "slide") {
@@ -428,12 +428,12 @@ function TemplatePreview({ fn, color, template, duration, th }: {
 function TrailPreview({ fn, color, duration, th }: { fn: (t: number) => number; color: string; duration: number; th: Theme }) {
   const [t, setT] = useState(0);
   useAnimLoop(duration, setT);
-  let v = 0; try { v = clamp01(fn(t)); } catch {}
-  const trackW = 220;
+  let v = 0; try { v = clamp01(fn(t)); } catch { }
+  const trackW = 156;
   const x = 4 + v * (trackW - 16);
   const ghosts = [0.95, 0.9, 0.82, 0.72, 0.6].map(offset => {
     const gt = Math.max(0, t - (1 - offset) * 0.15);
-    let gv = 0; try { gv = clamp01(fn(gt)); } catch {}
+    let gv = 0; try { gv = clamp01(fn(gt)); } catch { }
     return 4 + gv * (trackW - 16);
   });
   return (
@@ -488,11 +488,11 @@ export default function App() {
   });
 
   return (
-    <div style={{ minHeight: "100vh", background: th.bg, color: th.text, fontFamily: "'Inter', sans-serif", padding: "24px 16px", transition: "background 0.2s, color 0.2s" }}>
+    <div style={{ minHeight: "100vh", background: th.bg, color: th.text, fontFamily: "'Inter', sans-serif", padding: "16px", transition: "background 0.2s, color 0.2s" }}>
       <div style={{ maxWidth: 1000, margin: "0 auto" }}>
 
         {/* Header */}
-        <div style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, background: "linear-gradient(90deg, #818cf8, #34d399)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
               ✦ Easing Editor
@@ -522,7 +522,7 @@ export default function App() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
           {(["library", "bezier", "compare"] as const).map(id => (
             <button key={id} onClick={() => setTab(id)} style={{
               padding: "8px 16px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
@@ -537,8 +537,8 @@ export default function App() {
         </div>
 
         {/* Combine panel */}
-        <div style={{ ...panel(), padding: "12px 14px", marginBottom: 16 }}>
-          <div style={{ fontSize: 11, color: th.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Combine</div>
+        <div style={{ ...panel(), padding: "10px 12px", marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: th.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Combine</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span style={{ fontSize: 11, color: th.textMuted }}>Mode</span>
@@ -622,7 +622,7 @@ export default function App() {
 
             {/* Main content */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
                 <div style={{ ...panel(), padding: 12 }}>
                   <div style={{ fontSize: 11, color: th.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Curve</div>
                   <EasingCurve fn={finalFn} color={activeColor} animated duration={duration} th={th} />
@@ -703,24 +703,21 @@ export default function App() {
         {/* Compare Tab */}
         {tab === "compare" && (
           <div>
-            <div style={{ fontSize: 13, color: th.textMuted, marginBottom: 16 }}>Comparing 6 common easing curves side by side</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+            <div style={{ fontSize: 13, color: th.textMuted, marginBottom: 12 }}>Comparing 6 common easing curves — click any to open in Library</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
               {comparePicks.map(n => {
                 const fn = easings[n];
                 const col = getColor(n);
                 return (
                   <div key={n} onClick={() => { setSelected(n); setTab("library"); }} style={{
-                    ...panel(), padding: 12, cursor: "pointer", transition: "border-color 0.2s",
+                    ...panel(), padding: 10, cursor: "pointer", transition: "border-color 0.2s",
                   }}
                     onMouseEnter={e => (e.currentTarget.style.borderColor = col)}
                     onMouseLeave={e => (e.currentTarget.style.borderColor = th.border)}>
-                    <div style={{ fontSize: 12, color: col, fontFamily: "monospace", marginBottom: 8, fontWeight: 600 }}>{n}</div>
-                    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                      <EasingCurve fn={fn} color={col} width={160} height={160} animated duration={duration} th={th} />
-                      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, paddingTop: 4 }}>
-                        <TemplatePreview fn={fn} color={col} template="slide" duration={duration} th={th} />
-                        <TemplatePreview fn={fn} color={col} template="scale" duration={duration} th={th} />
-                      </div>
+                    <div style={{ fontSize: 11, color: col, fontFamily: "monospace", marginBottom: 6, fontWeight: 600 }}>{n}</div>
+                    <EasingCurve fn={fn} color={col} width={220} height={160} animated duration={duration} th={th} />
+                    <div style={{ marginTop: 8 }}>
+                      <TrailPreview fn={fn} color={col} duration={duration} th={th} />
                     </div>
                   </div>
                 );
