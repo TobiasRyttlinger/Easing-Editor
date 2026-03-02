@@ -478,7 +478,7 @@ export default function App() {
 
   const [selected, setSelected] = useState("easeInOutCubic");
   const [cp, setCp] = useState([0.25, 0.1, 0.25, 1.0]);
-  const [tab, setTab] = useState<"library" | "bezier" | "compare">("library");
+  const [tab, setTab] = useState<"library" | "bezier">("library");
 
   const [mode, setMode] = useState<CombineMode>("none");
   const [secondary, setSecondary] = useState("easeOutBounce");
@@ -496,7 +496,6 @@ export default function App() {
   const activeColor = mode !== "none" ? "#f59e0b" : getColor(selected);
 
   const allNames = [...Object.values(categories).flat(), "linear", "customCubicBezier"];
-  const comparePicks = ["easeInCubic", "easeOutCubic", "easeInOutCubic", "easeInElastic", "easeOutBounce", "easeInBack"];
 
   const selectStyle: React.CSSProperties = {
     background: th.inputBg, color: th.text, border: `1px solid ${th.border}`,
@@ -558,7 +557,7 @@ export default function App() {
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-          {(["library", "bezier", "compare"] as const).map(id => (
+          {(["library", "bezier"] as const).map(id => (
             <button key={id} onClick={() => setTab(id)} style={{
               padding: "8px 16px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
               background: tab === id ? "#818cf8" : th.panel,
@@ -566,7 +565,7 @@ export default function App() {
               border: `1px solid ${tab === id ? "transparent" : th.border}`,
               transition: "all 0.2s",
             } as React.CSSProperties}>
-              {id === "library" ? "📚 Library" : id === "bezier" ? "🎛 Bézier" : "⚖️ Compare"}
+              {id === "library" ? "📚 Library" : "🎛 Bézier"}
             </button>
           ))}
         </div>
@@ -734,33 +733,6 @@ export default function App() {
             </div>
           </div>
         )}
-
-        {/* Compare Tab */}
-        {tab === "compare" && (
-          <div>
-            <div style={{ fontSize: 13, color: th.textMuted, marginBottom: 12 }}>Comparing 6 common easing curves — click any to open in Library</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
-              {comparePicks.map(n => {
-                const fn = easings[n];
-                const col = getColor(n);
-                return (
-                  <div key={n} onClick={() => { setSelected(n); setTab("library"); }} style={{
-                    ...panel(), padding: 10, cursor: "pointer", transition: "border-color 0.2s",
-                  }}
-                    onMouseEnter={e => (e.currentTarget.style.borderColor = col)}
-                    onMouseLeave={e => (e.currentTarget.style.borderColor = th.border)}>
-                    <div style={{ fontSize: 11, color: col, fontFamily: "monospace", marginBottom: 6, fontWeight: 600 }}>{n}</div>
-                    <EasingCurve fn={fn} color={col} width={220} height={160} animated duration={duration} th={th} />
-                    <div style={{ marginTop: 8 }}>
-                      <TrailPreview fn={fn} color={col} duration={duration} th={th} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
       </div>
     </div>
   );
