@@ -342,25 +342,35 @@ const templates = [
   { id: "slide" }, { id: "fade" }, { id: "scale" }, { id: "rotate" }, { id: "bounce-y" },
 ];
 
-function TemplatePreview({ fn, color, template, duration, th }: {
-  fn: (t: number) => number; color: string; template: string; duration: number; th: Theme;
+function TemplatePreview({ fn, color, template, duration, th, customImg }: {
+  fn: (t: number) => number; color: string; template: string; duration: number; th: Theme; customImg?: string | null;
 }) {
   const [t, setT] = useState(0);
   useAnimLoop(duration, setT);
   let v = 0; try { v = clamp01(fn(t)); } catch { }
 
   const CardFace = ({ style }: { style?: React.CSSProperties }) => (
-    <div style={{
-      width: 56, height: 72,
-      background: `linear-gradient(135deg, ${th.canvasAxis} 0%, ${th.panel} 100%)`,
-      borderRadius: 8, border: `2px solid ${color}44`, boxShadow: `0 0 12px ${color}33`,
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4,
-      ...style
-    }}>
-      <div style={{ width: 28, height: 28, borderRadius: "50%", background: color, opacity: 0.9, boxShadow: `0 0 8px ${color}` }} />
-      <div style={{ width: 32, height: 3, borderRadius: 2, background: color, opacity: 0.5 }} />
-      <div style={{ width: 22, height: 3, borderRadius: 2, background: color, opacity: 0.3 }} />
-    </div>
+    customImg ? (
+      <div style={{
+        width: 56, height: 72, borderRadius: 8, overflow: "hidden",
+        border: `2px solid ${color}44`, boxShadow: `0 0 12px ${color}33`, flexShrink: 0,
+        ...style
+      }}>
+        <img src={customImg} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      </div>
+    ) : (
+      <div style={{
+        width: 56, height: 72,
+        background: `linear-gradient(135deg, ${th.canvasAxis} 0%, ${th.panel} 100%)`,
+        borderRadius: 8, border: `2px solid ${color}44`, boxShadow: `0 0 12px ${color}33`,
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, flexShrink: 0,
+        ...style
+      }}>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", background: color, opacity: 0.9, boxShadow: `0 0 8px ${color}` }} />
+        <div style={{ width: 32, height: 3, borderRadius: 2, background: color, opacity: 0.5 }} />
+        <div style={{ width: 22, height: 3, borderRadius: 2, background: color, opacity: 0.3 }} />
+      </div>
+    )
   );
 
   const trackW = 156;
@@ -456,6 +466,16 @@ export default function App() {
   const [isDark, setIsDark] = useState(true);
   const th = isDark ? darkTheme : lightTheme;
 
+  const [customImg, setCustomImg] = useState<string | null>(null);
+  const imgInputRef = useRef<HTMLInputElement>(null);
+  const handleImgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (customImg) URL.revokeObjectURL(customImg);
+    setCustomImg(URL.createObjectURL(file));
+    e.target.value = "";
+  };
+
   const [selected, setSelected] = useState("easeInOutCubic");
   const [cp, setCp] = useState([0.25, 0.1, 0.25, 1.0]);
   const [tab, setTab] = useState<"library" | "bezier" | "compare">("library");
@@ -500,6 +520,21 @@ export default function App() {
             <p style={{ margin: "6px 0 0", color: th.textMuted, fontSize: 14 }}>Visualize & customize animation easing curves</p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* Image upload */}
+            <input ref={imgInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImgUpload} />
+            <button onClick={() => imgInputRef.current?.click()} title="Upload custom preview image" style={{
+              background: customImg ? "#34d39922" : th.panel, border: `1px solid ${customImg ? "#34d399" : th.border}`,
+              borderRadius: 10, padding: "8px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600,
+              color: customImg ? "#34d399" : th.textSub, display: "flex", alignItems: "center", gap: 6,
+            }}>
+              🖼 {customImg ? "Change image" : "Upload image"}
+            </button>
+            {customImg && (
+              <button onClick={() => { URL.revokeObjectURL(customImg); setCustomImg(null); }} title="Remove custom image" style={{
+                background: th.panel, border: `1px solid ${th.border}`, borderRadius: 10,
+                padding: "8px 10px", cursor: "pointer", fontSize: 13, color: th.textSub,
+              }}>✕</button>
+            )}
             {/* Theme toggle */}
             <button onClick={() => setIsDark(v => !v)} title={isDark ? "Switch to light mode" : "Switch to dark mode"} style={{
               background: th.panel, border: `1px solid ${th.border}`, borderRadius: 10,
@@ -634,7 +669,7 @@ export default function App() {
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     {templates.map(({ id }) => (
-                      <TemplatePreview key={id} fn={finalFn} color={activeColor} template={id} duration={duration} th={th} />
+                      <TemplatePreview key={id} fn={finalFn} color={activeColor} template={id} duration={duration} th={th} customImg={customImg} />
                     ))}
                     <TrailPreview fn={finalFn} color={activeColor} duration={duration} th={th} />
                   </div>
@@ -692,7 +727,7 @@ export default function App() {
               <div style={{ fontSize: 11, color: th.textMuted, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Template Previews</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 {templates.map(({ id }) => (
-                  <TemplatePreview key={id} fn={customFn} color="#34d399" template={id} duration={duration} th={th} />
+                  <TemplatePreview key={id} fn={customFn} color="#34d399" template={id} duration={duration} th={th} customImg={customImg} />
                 ))}
                 <TrailPreview fn={customFn} color="#34d399" duration={duration} th={th} />
               </div>
