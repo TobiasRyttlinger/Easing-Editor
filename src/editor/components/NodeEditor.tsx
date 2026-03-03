@@ -79,6 +79,8 @@ export function NodeEditor({ node, onChange, th, allNames, selectStyle, path, dr
             repeatCount: 3,
             clampMin: 0.15,
             clampMax: 0.85,
+            connectX: 0.5,
+            connectY: 0.5,
           })}
         >
           +
@@ -124,6 +126,31 @@ export function NodeEditor({ node, onChange, th, allNames, selectStyle, path, dr
               step={1}
               value={node.repeatCount}
               onChange={e => onChange({ ...node, repeatCount: parseInt(e.target.value, 10) })}
+              style={{ width: 60, accentColor: "#f59e0b" }}
+            />
+          </>
+        )}
+        {node.mode === "connect" && (
+          <>
+            <span style={{ fontSize: 11, color: th.textMuted }}>
+              X:{node.connectX.toFixed(2)} Y:{node.connectY.toFixed(2)}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={node.connectX}
+              onChange={e => onChange({ ...node, connectX: parseFloat(e.target.value) })}
+              style={{ width: 60, accentColor: "#f59e0b" }}
+            />
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={node.connectY}
+              onChange={e => onChange({ ...node, connectY: parseFloat(e.target.value) })}
               style={{ width: 60, accentColor: "#f59e0b" }}
             />
           </>

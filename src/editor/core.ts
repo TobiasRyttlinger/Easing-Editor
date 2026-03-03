@@ -125,7 +125,7 @@ export const combineModes: { id: CombineMode; label: string }[] = [
 export type TweenNode =
   | { type: "simple"; name: string }
   | { type: "op"; mode: CombineMode; a: TweenNode; b: TweenNode;
-      mix: number; repeatCount: number; clampMin: number; clampMax: number };
+      mix: number; repeatCount: number; clampMin: number; clampMax: number; connectX: number; connectY: number };
 
 export type CurveTrack = { id: string; label: string; node: TweenNode };
 export type TreePreset = { id: string; label: string; tracks: CurveTrack[] };
@@ -140,11 +140,12 @@ export function makeCombined(
   mode: CombineMode,
   aFn: (t: number) => number,
   bFn: (t: number) => number,
-  mix: number, repeatCount: number, minV: number, maxV: number,
+  mix: number, repeatCount: number, minV: number, maxV: number, connectX: number, connectY: number,
 ) {
   const m = clamp01(mix);
   const count = Math.max(1, Math.floor(repeatCount));
   const lo = Math.min(minV, maxV), hi = Math.max(minV, maxV);
+  const cx = clamp01(connectX), cy = clamp01(connectY);
   return (tRaw: number): number => {
     const t = clamp01(tRaw);
     const a = aFn(t), b = bFn(t);
@@ -152,7 +153,14 @@ export function makeCombined(
       case "yoyo": { const p = t < 0.5 ? t * 2 : (1 - t) * 2; return aFn(p); }
       case "composite": return aFn(clamp01(b));
       case "multiply": return a * b;
-      case "connect": return t < 0.5 ? 0.5 * aFn(t * 2) : 0.5 + 0.5 * bFn((t - 0.5) * 2);
+      case "connect": {
+        if (t <= cx) {
+          const u = cx <= 1e-6 ? 1 : t / cx;
+          return cy * aFn(u);
+        }
+        const u = (1 - cx) <= 1e-6 ? 1 : (t - cx) / (1 - cx);
+        return cy + (1 - cy) * bFn(u);
+      }
       case "average": return (a + b) * 0.5;
       case "lerp": return lerp(a, b, m);
       case "clamp": return Math.max(lo, Math.min(hi, a));
@@ -169,7 +177,7 @@ export function evalNode(node: TweenNode, customFn: (t: number) => number): (t: 
     return node.name === "customCubicBezier" ? customFn : (easings[node.name] ?? easings.linear);
   const aFn = evalNode(node.a, customFn);
   const bFn = evalNode(node.b, customFn);
-  return makeCombined(node.mode, aFn, bFn, node.mix, node.repeatCount, node.clampMin, node.clampMax);
+  return makeCombined(node.mode, aFn, bFn, node.mix, node.repeatCount, node.clampMin, node.clampMax, node.connectX, node.connectY);
 }
 
 export function getNodeAtPath(root: TweenNode, path: string[]): TweenNode {
@@ -219,7 +227,7 @@ export const nodeOp = (
   mode: CombineMode,
   a: TweenNode,
   b: TweenNode = nodeSimple("linear"),
-  opts: Partial<Pick<Extract<TweenNode, { type: "op" }>, "mix" | "repeatCount" | "clampMin" | "clampMax">> = {},
+  opts: Partial<Pick<Extract<TweenNode, { type: "op" }>, "mix" | "repeatCount" | "clampMin" | "clampMax" | "connectX" | "connectY">> = {},
 ): TweenNode => ({
   type: "op",
   mode,
@@ -229,6 +237,8 @@ export const nodeOp = (
   repeatCount: opts.repeatCount ?? 3,
   clampMin: opts.clampMin ?? 0.15,
   clampMax: opts.clampMax ?? 0.85,
+  connectX: opts.connectX ?? 0.5,
+  connectY: opts.connectY ?? 0.5,
 });
 
 export const cloneNode = (node: TweenNode): TweenNode => {
